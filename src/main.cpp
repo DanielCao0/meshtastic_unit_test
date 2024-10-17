@@ -242,7 +242,7 @@ void oled(void *parameter)
 	u8g2.print("OLED TEST OK\r\n");			 // 指定缓存区需要打印的字符串
 	u8g2.sendBuffer();						 // 将定位信息发送到缓冲区
 
-	// char data[32] = {0};
+	char data[32] = {0};
 
 	while (1)
 	{
@@ -273,7 +273,9 @@ void gps(void *parameter)
 {
 	int baud[7] = {9600, 14400, 19200, 38400, 56000, 57600, 115200};
 
-	for (size_t i = 0; i < sizeof(baud) / sizeof(int); i++)
+	size_t i ;
+
+	for ( i = 0; i < sizeof(baud) / sizeof(int); i++)
 	{
 		Serial1.begin(baud[i]);
 		while (!Serial1)
@@ -283,10 +285,18 @@ void gps(void *parameter)
 			Serial.printf("GNSS baund rate: %d \n", baud[i]); // GNSS baund rate
 			break;
 		}
+		
 		Serial1.end();
 		delay(200);
 	}
-	Serial.println("GNSS serial connected");
+	
+
+	if( i == 7)
+	{
+		vTaskDelete(NULL);
+	}
+
+	Serial.println("GNSS serial connected\n");
 
 	g_myGNSS.setUART1Output(COM_TYPE_UBX); // Set the UART port to output UBX only
 	g_myGNSS.setI2COutput(COM_TYPE_UBX);   // Set the I2C port to output UBX only (turn off NMEA noise)
