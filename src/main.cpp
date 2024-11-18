@@ -12,6 +12,12 @@
 #include <SPI.h>
 #include <bluefruit.h>
 #include <BLEScanner.h>
+#include "SPI.h"
+#include "SD.h"//http://librarymanager/All#SD
+
+#include "Melopero_RV3028.h" //Click here to get the library: http://librarymanager/All#Melopero_RV3028
+
+Melopero_RV3028 rtc;
 
 // Define LoRa parameters
 #define RF_FREQUENCY 868300000	// Hz
@@ -55,6 +61,7 @@ static void button(void *parameter);
 static void ble(void *parameter);
 static void battery(void *parameter);
 
+
 void scan_callback(ble_gap_evt_adv_report_t *report);
 bool getDeviceName(ble_gap_evt_adv_report_t *report, char *name, size_t nameSize);
 
@@ -69,6 +76,8 @@ void handle_gps(const AT_Command *cmd);
 void handle_acc(const AT_Command *cmd);
 void handle_scan(const AT_Command *cmd);
 void handle_bat(const AT_Command *cmd);
+void handle_sd(const AT_Command *cmd);
+void handle_rtc(const AT_Command *cmd);
 
 #define PIN_VBAT WB_A0
 uint32_t vbat_pin = PIN_VBAT;
@@ -116,13 +125,15 @@ typedef struct
 
 AT_HandlerTable handler_table[] = {
 
-	{"AT", handle_at, "AT Test"},
+	{"AT", handle_at, "AT Test 2024/11/4"},
 	{"AT+GPS", handle_gps, "GPS"},
 	{"AT+ACC", handle_acc, "ACC"},
 	{"AT+LORASTART", startTone, "Lora start"},
 	{"AT+LORASTOP", stopTone, "Lora stop"},
 	{"AT+SCAN", handle_scan, "Ble scan"},
 	{"AT+BAT", handle_bat, "Bat"},
+	{"AT+SD", handle_sd, "SD"},
+	{"AT+RTC", handle_rtc, "RTC"},
 };
 
 void setup()
@@ -220,7 +231,32 @@ void setup()
 		4 * 1024, /* Stack size in bytes. */
 		NULL,	  /* Parameter passed as input of the task */
 		0,		  /* Priority of the task. */
-		NULL);		
+		NULL);	
+
+	if(!SD.begin()) 
+  	{    
+    	Serial.println("Card Mount Failed! Please make sure the card is inserted!");
+  	}
+
+	// rtc.initDevice();
+	// rtc.writeToRegister(0x35,0x00);
+  	// rtc.writeToRegister(0x37,0xB4); //Direct Switching Mode (DSM): when VDD < VBACKUP, switchover occurs from VDD to VBACKUP
+
+  	// rtc.set24HourMode();  // Set the device to use the 24hour format (default) instead of the 12 hour format
+
+  	// Set the date and time
+  	// year, month, weekday, date, hour, minute, second
+  	// Note: time is always set in 24h format
+  	// Note: month value ranges from 1 (Jan) to 12 (Dec)
+  	// Note: date value ranges from 1 to 31
+  	// rtc.setTime(2014, 06, 2, 29, 0, 0, 0);
+
+	Wire.begin();
+  	rtc.initI2C();
+	rtc.set24HourMode();
+  	// Set the date and time:
+  	rtc.setTime(2014, 06, 3, 29, 0, 0, 0);
+
 }
 
 void loop()
@@ -305,7 +341,6 @@ void gps(void *parameter)
 	xGpsSemaphore = xSemaphoreCreateBinary();
 
 	// xCountingSemaphore = xSemaphoreCreateCounting(MAX_COUNT, 0);
-
 	// xSemaphoreGive(xGpsSemaphore);
 	while (1)
 	{
@@ -382,6 +417,7 @@ void acc(void *parameter)
 		delay(100);
 	}
 
+	//rtc.initI2C();
 	xAccSemaphore = xSemaphoreCreateBinary();
 
 	while (1)
@@ -816,3 +852,107 @@ float readVBAT(void)
 }
 
 
+
+
+void testFileIO(const char *path)
+{
+	Serial.println("Test read and write file speed.");
+	Serial.printf("Writing file: %s\n", path);
+
+	static uint8_t buf[512];
+	size_t len = 0;
+	uint32_t start = millis();
+	uint32_t end = start;
+
+	File file = SD.open(path, FILE_WRITE);
+
+	if (file) // if the file opened okay, write to it.
+	{
+		size_t i;
+		start = millis();
+		for (i = 0; i < 10* 1024 /512  ; i++)
+		{
+			file.write(buf, 512);
+		}
+		end = millis() - start;
+		Serial.printf("%u KB written for %u ms\n", 10, end);
+		file.close();
+	}
+	else
+	{
+		Serial.println("Failed to open file for writing.");
+		Serial.printf("SD TEST FAIL\r\n");
+		return;
+	}
+	delay(10);
+
+	file = SD.open(path, FILE_READ);
+	if (file)
+	{
+		len = file.size();
+		size_t flen = len;
+		start = millis();
+		while (len)
+		{
+			size_t toRead = len;
+			if (toRead > 512)
+			{
+				toRead = 512;
+			}
+			file.read(buf, toRead);
+			len -= toRead;
+		}
+		end = millis() - start;
+		Serial.printf("%u KB read for %u ms\n", flen / 1024, end);
+		Serial.printf("SD TEST OK\r\n");
+		file.close();
+	}
+	else
+	{
+		Serial.println("Failed to open file for reading.");
+		Serial.printf("SD TEST FAIL\r\n");
+		return;
+	}
+}
+
+void deleteFile(const char * path)
+{
+  Serial.printf("Deleting file: %s\n", path);
+  
+  if(SD.remove(path))
+  {
+    Serial.println("File deleted.");
+  } 
+  else 
+  {
+    Serial.println("Delete failed.");
+  }
+}
+
+void handle_sd(const AT_Command *cmd)
+{
+	Serial.printf("OK\r\n");
+	deleteFile("RAK15002.txt"); 
+	testFileIO("RAK15002.txt");
+	//xSemaphoreGive(xScanSemaphore);
+}
+
+void printTime(){
+  Serial.print(rtc.getHour());
+  Serial.print(":");
+  Serial.print(rtc.getMinute());
+  Serial.print(":");
+  Serial.print(rtc.getSecond());
+  Serial.print("   ");
+  Serial.print(rtc.getDate());
+  Serial.print("/");
+  Serial.print(rtc.getMonth());
+  Serial.print("/");
+  Serial.println(rtc.getYear());
+}
+
+void handle_rtc(const AT_Command *cmd)
+{
+	//Serial.printf("%d:%d:%d %d/%d/%d \n",rtc.getHour(),rtc.getMinute(),rtc.getSecond(),rtc.getYear(),rtc.getMonth(),rtc.getDate());
+	printTime();
+}
