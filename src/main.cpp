@@ -17,6 +17,9 @@
 
 #include "Melopero_RV3028.h" //Click here to get the library: http://librarymanager/All#Melopero_RV3028
 
+#include <SPI.h>
+#include <RAK13800_W5100S.h>   // Click to install library: http://librarymanager/All#RAK13800-W5100S
+
 Melopero_RV3028 rtc;
 
 // Define LoRa parameters
@@ -60,6 +63,7 @@ static void lora(void *parameter);
 static void button(void *parameter);
 static void ble(void *parameter);
 static void battery(void *parameter);
+static void rak13800(void *parameter);
 
 
 void scan_callback(ble_gap_evt_adv_report_t *report);
@@ -78,6 +82,7 @@ void handle_scan(const AT_Command *cmd);
 void handle_bat(const AT_Command *cmd);
 void handle_sd(const AT_Command *cmd);
 void handle_rtc(const AT_Command *cmd);
+void handle_dhcp(const AT_Command *cmd);
 
 #define PIN_VBAT WB_A0
 uint32_t vbat_pin = PIN_VBAT;
@@ -125,7 +130,7 @@ typedef struct
 
 AT_HandlerTable handler_table[] = {
 
-	{"AT", handle_at, "AT Test 2024/11/4"},
+	{"AT", handle_at, "AT Test 2025/2/14"},
 	{"AT+GPS", handle_gps, "GPS"},
 	{"AT+ACC", handle_acc, "ACC"},
 	{"AT+LORASTART", startTone, "Lora start"},
@@ -134,7 +139,21 @@ AT_HandlerTable handler_table[] = {
 	{"AT+BAT", handle_bat, "Bat"},
 	{"AT+SD", handle_sd, "SD"},
 	{"AT+RTC", handle_rtc, "RTC"},
+	{"AT+DHCP", handle_dhcp, "DHCP"},
 };
+
+
+ // You can provide a username and password for authentication.
+ #define USER_NAME     "admin"
+ #define PASSWORD      "password"
+ 
+ IPAddress ip(192, 168, 1, 177); // Set IP address,dependent on your local network.
+ 
+ IPAddress server(192, 168, 1, 101); // Set the server IP address.
+
+ EthernetClient client;
+
+ byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED }; // Set the MAC address, do not repeat in a network.
 
 void setup()
 {
@@ -232,6 +251,17 @@ void setup()
 		NULL,	  /* Parameter passed as input of the task */
 		0,		  /* Priority of the task. */
 		NULL);	
+
+
+	xTaskCreate(
+		rak13800,	  /* Task function. */
+		"rak13800",	  /* String with name of task. */
+		4 * 1024, /* Stack size in bytes. */
+		NULL,	  /* Parameter passed as input of the task */
+		0,		  /* Priority of the task. */
+		NULL);	
+		
+
 
 	if(!SD.begin()) 
   	{    
@@ -840,7 +870,6 @@ static void battery(void *parameter)
 }
 
 
-
 float readVBAT(void)
 {
     float raw;
@@ -955,4 +984,44 @@ void handle_rtc(const AT_Command *cmd)
 {
 	//Serial.printf("%d:%d:%d %d/%d/%d \n",rtc.getHour(),rtc.getMinute(),rtc.getSecond(),rtc.getYear(),rtc.getMonth(),rtc.getDate());
 	printTime();
+}
+
+
+static void rak13800(void *parameter)
+{
+
+	Ethernet.init( SS );      // Set CS pin.
+	Serial.println("Initialize Ethernet with DHCP.");   // start the Ethernet connection.
+	if (Ethernet.begin(mac) == 0) 
+	{
+	  Serial.println("Failed to configure Ethernet using DHCP");
+	  if (Ethernet.hardwareStatus() == EthernetNoHardware)  // Check for Ethernet hardware present.
+	  {
+		Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware. :(");
+		while (true) 
+		{
+		  delay(1000); // Do nothing, just love you.
+		}
+	  }
+	  while (Ethernet.linkStatus() == LinkOFF) 
+	  {
+		//Serial.println("Ethernet cable is not connected.");
+		delay(1000);
+	  }
+	}
+	
+	Serial.print("My IP address: ");
+	Serial.println(Ethernet.localIP()); // Print your local IP address.
+
+	while(1)
+	{
+		delay(1000);
+	}
+
+}
+
+
+void handle_dhcp(const AT_Command *cmd)
+{
+	Serial.println(Ethernet.localIP());
 }
